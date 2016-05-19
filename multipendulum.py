@@ -15,7 +15,7 @@ import matplotlib.animation as animation
 # from help_functions import *
 
 zeitraffer = 40
-# TODO: zeitraffer, overflow
+# TODO: zeitraffer, overflow, normalize, multithreading
 
 
 class Multipendulum(object):
@@ -40,11 +40,19 @@ class Multipendulum(object):
         self.random_angles()
         self.phi_dot = 0 * np.random.random_sample((n,))  # Anfangs(winkel)geschwindigkeiten
         self.phi_ddot = np.zeros(n)  # Anfangs(winkel)beschleunigungen
+
         self.__A = np.zeros([n, n])
         self.__D = np.zeros(n)  # A,D,M Hilfsmatrizen
         self.__M = self.__stage_matrix(n)
+
         self.x = np.zeros(n)  # x,y: kartesische Koordinaten
         self.y = np.zeros(n)
+
+        self.last_x = np.copy(self.x)
+        self.last_y = np.copy(self.y)
+        self.start_energy = self.get_e_pot()
+        self.update_positions()
+
         self.trace_data_x = np.array([])
         self.trace_data_y = np.array([])
 
@@ -82,11 +90,43 @@ class Multipendulum(object):
         self.phi_ddot = np.dot(lin.inv(__A), __D) - self.damping * self.phi_dot
         self.phi_dot += self.phi_ddot * t
         self.phi = self.phi_dot * t + phi
+        # self.norm_phi_dot()
         for j in range(n):
             hx += np.sin(phi[j])
             self.x[j] = self.x0 + l * hx
             hy += np.cos(phi[j])
             self.y[j] = self.y0 - l * hy
+
+    def norm_phi_dot(self):
+        current_energy = self.get_energy()
+        self.phi_dot = self.phi_dot * (self.start_energy-current_energy)/len(self.phi)
+        # pass  # ToDo: norm angel velocity
+
+    def get_energy(self):  # ToDo: Masse hat stab oder punkt
+        # e_kin = 0.5 * m * np.dot(self.phi_dot, self.phi_dot)
+        e_kin = self.get_e_kin()
+        e_pot = self.get_e_pot()
+        print "{e_pot:.2f} + {e_kin:.2f} = {e_sum:.2f}".format(e_pot=e_pot, e_kin=e_kin, e_sum=(e_pot+e_kin))
+        energy = e_pot + e_kin
+        return energy
+
+    def get_e_pot(self):
+        m = 1
+        return m * self.gravitational_acceleration * self.y.sum()
+
+    def get_e_kin(self):
+        m = 1
+        # e_kin = 1.5 * 1/6.0 * m * self.length_pendulum**2 * self.phi_dot[0]**2  # E_rot = 1/2 * J * w²
+        velocity_x = (self.last_x - self.x) / self.time_step
+        velocity_y = (self.last_y - self.y) / self.time_step
+        velocity_squared = (velocity_x ** 2).sum() + (velocity_y ** 2).sum()
+        e_kin = 1/2. * m * velocity_squared
+
+        return e_kin
+
+    @staticmethod
+    def distance(x, y):
+        return np.sqrt(np.sum((x - y) ** 2))
 
     @staticmethod
     def __stage_matrix(size):
@@ -114,6 +154,7 @@ class Multipendulum(object):
         self.__data.set_data([], [])
         self.__trace.set_data([], [])
         self.update_positions()
+        # print self.get_energy()
         return self.__data, self.__trace
 
     def __animate(self, _):
